@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -17,13 +18,27 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	listenAddress := flag.String(
+		"listen-address",
+		":50051",
+		"TCP address on which the gRPC server listens",
+	)
+
+	dataDir := flag.String(
+		"data-dir",
+		"./data",
+		"directory containing the Pebble database",
+	)
+
+	flag.Parse()
+
+	if err := run(*listenAddress, *dataDir); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run() error {
-	pebbleStore, err := storage.OpenPebbleStore("./data")
+func run(listenAddress string, dataDir string) error {
+	pebbleStore, err := storage.OpenPebbleStore(dataDir)
 	if err != nil {
 		return fmt.Errorf("open Pebble store: %w", err)
 	}
@@ -37,9 +52,9 @@ func run() error {
 	appService := service.NewService(pebbleStore)
 	grpcAdapter := server.NewGRPCServer(appService)
 
-	listener, err := net.Listen("tcp", ":50051")
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		return fmt.Errorf("listen on port 50051: %w", err)
+		return fmt.Errorf("listen on port %s: %w", listenAddress, err)
 	}
 
 	grpcServer := grpc.NewServer()
@@ -62,7 +77,7 @@ func run() error {
 		grpcServer.GracefulStop()
 	}()
 
-	log.Println("gRPC server listening on :50051")
+	log.Println("gRPC server listening on", listenAddress)
 
 	if err := grpcServer.Serve(listener); err != nil {
 		return fmt.Errorf("serve gRPC: %w", err)
