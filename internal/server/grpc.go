@@ -6,7 +6,7 @@ import (
 
 	makalukvv1 "github.com/georgikolev17/MakaluKV/api/makalukv/v1"
 	"github.com/georgikolev17/MakaluKV/internal/service"
-	"github.com/georgikolev17/MakaluKV/internal/storage"
+	"github.com/georgikolev17/MakaluKV/internal/storage/statemachine"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -80,13 +80,13 @@ func translateError(err error) error {
 	}
 }
 
-func translateSwapResult(result storage.SwapResult) makalukvv1.CompareAndSwapResult {
+func translateSwapResult(result statemachine.SwapResult) makalukvv1.CompareAndSwapResult {
 	switch result {
-	case storage.SwapResultSwapped:
+	case statemachine.SwapResultSwapped:
 		return makalukvv1.CompareAndSwapResult_COMPARE_AND_SWAP_RESULT_SWAPPED
-	case storage.SwapResultKeyNotFound:
+	case statemachine.SwapResultKeyNotFound:
 		return makalukvv1.CompareAndSwapResult_COMPARE_AND_SWAP_RESULT_KEY_NOT_FOUND
-	case storage.SwapResultValueMismatch:
+	case statemachine.SwapResultValueMismatch:
 		return makalukvv1.CompareAndSwapResult_COMPARE_AND_SWAP_RESULT_VALUE_MISMATCH
 	default:
 		return makalukvv1.CompareAndSwapResult_COMPARE_AND_SWAP_RESULT_UNSPECIFIED

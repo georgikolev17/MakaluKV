@@ -1,14 +1,14 @@
 package service
 
 import (
-	"github.com/georgikolev17/MakaluKV/internal/storage"
+	"github.com/georgikolev17/MakaluKV/internal/storage/statemachine"
 )
 
 type Service struct {
-	store storage.Store
+	store statemachine.Store
 }
 
-func NewService(store storage.Store) *Service {
+func NewService(store statemachine.Store) *Service {
 	return &Service{store: store}
 }
 
@@ -39,15 +39,15 @@ func (s *Service) Delete(key []byte) error {
 	return s.store.Delete(key)
 }
 
-func (s *Service) CompareAndSwap(key []byte, expectedValue []byte, newValue []byte) (storage.SwapResult, error) {
+func (s *Service) CompareAndSwap(key []byte, expectedValue []byte, newValue []byte) (statemachine.SwapResult, error) {
 	if err := validateKeyLength(key); err != nil {
-		return storage.SwapResultUnspecified, err
+		return statemachine.SwapResultUnspecified, err
 	}
 	if err := validateValueLength(expectedValue); err != nil {
-		return storage.SwapResultUnspecified, err
+		return statemachine.SwapResultUnspecified, err
 	}
 	if err := validateValueLength(newValue); err != nil {
-		return storage.SwapResultUnspecified, err
+		return statemachine.SwapResultUnspecified, err
 	}
 
 	return s.store.CompareAndSwap(key, expectedValue, newValue)

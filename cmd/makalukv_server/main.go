@@ -13,7 +13,7 @@ import (
 	makalukvv1 "github.com/georgikolev17/MakaluKV/api/makalukv/v1"
 	"github.com/georgikolev17/MakaluKV/internal/server"
 	"github.com/georgikolev17/MakaluKV/internal/service"
-	"github.com/georgikolev17/MakaluKV/internal/storage"
+	"github.com/georgikolev17/MakaluKV/internal/storage/statemachine"
 	"google.golang.org/grpc"
 )
 
@@ -38,7 +38,7 @@ func main() {
 }
 
 func run(listenAddress string, dataDir string) error {
-	pebbleStore, err := storage.OpenPebbleStore(dataDir)
+	pebbleStore, err := statemachine.OpenPebbleStore(dataDir)
 	if err != nil {
 		return fmt.Errorf("open Pebble store: %w", err)
 	}

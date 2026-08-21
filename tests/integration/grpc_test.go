@@ -10,7 +10,7 @@ import (
 	makalukvv1 "github.com/georgikolev17/MakaluKV/api/makalukv/v1"
 	"github.com/georgikolev17/MakaluKV/internal/server"
 	"github.com/georgikolev17/MakaluKV/internal/service"
-	"github.com/georgikolev17/MakaluKV/internal/storage"
+	"github.com/georgikolev17/MakaluKV/internal/storage/statemachine"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -20,7 +20,7 @@ const bufferSize = 1024 * 1024
 
 func TestGRPCKeyValueLifecycle(t *testing.T) {
 	// Use an isolated temporary Pebble database.
-	pebbleStore, err := storage.OpenPebbleStore(t.TempDir())
+	pebbleStore, err := statemachine.OpenPebbleStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("open Pebble store: %v", err)
 	}
