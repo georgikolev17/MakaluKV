@@ -16,6 +16,7 @@ func OpenPebbleStore(path string) (*PebbleStore, error) {
 	return &PebbleStore{db: db}, nil
 }
 
+// PebbleStore stores the current state of the state machine (key-value storage).
 type PebbleStore struct {
 	db    *pebble.DB
 	mutex sync.Mutex
@@ -93,6 +94,7 @@ func (s *PebbleStore) CompareAndSwap(key []byte, expectedValue []byte, newValue 
 	return SwapResultSwapped, nil
 }
 
+// Close closes the PebbleStorage.
 func (s *PebbleStore) Close() error {
 	return s.db.Close()
 }

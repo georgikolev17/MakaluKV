@@ -8,11 +8,12 @@ import (
 	raft "github.com/georgikolev17/MakaluKV/internal/raft"
 )
 
+// PebbleStore acts as a persistent storage for the Raft HardState.
 type PebbleStore struct {
 	db *pebble.DB
 }
 
-// Opens the Pebble db on the given path
+// OpenPebbleStore opens the Pebble db on the given path.
 func OpenPebbleStore(path string) (*PebbleStore, error) {
 	db, err := pebble.Open(path, &pebble.Options{})
 	if err != nil {
@@ -91,12 +92,12 @@ func OpenPebbleStore(path string) (*PebbleStore, error) {
 	return &PebbleStore{db: db}, nil
 }
 
-// Closes the Pebble db on the given path
+// Close closes the Pebble db on the given path.
 func (s *PebbleStore) Close() error {
 	return s.db.Close()
 }
 
-// Loads votedFor and currentTerm from the db into a HardState object
+// LoadHardState loads votedFor and currentTerm from the db into a HardState object.
 func (s *PebbleStore) LoadHardState() (raft.HardState, error) {
 	value, closer, err := s.db.Get([]byte(keyCurrentTerm))
 	if err != nil {
