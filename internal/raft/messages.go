@@ -1,25 +1,26 @@
 package raft
 
 type RequestVote struct {
-	Term         uint64
-	CandidateID  string
-	LastLogIndex uint64
-	LastLogTerm  uint64
+	Term         Term
+	CandidateID  NodeID
+	LastLogIndex LogIndex
+	LastLogTerm  Term
 }
 
 type RequestVoteResponse struct {
-	Term        uint64
+	ResponderID NodeID
+	Term        Term
 	VoteGranted bool
 }
 
 type AppendEntries struct {
 	Term         uint64
 	LeaderID     string
-	PrevLogIndex uint64
-	PrevLogTerm  uint64
+	PrevLogIndex LogIndex
+	PrevLogTerm  LogIndex
 	// TODO: Add Entries field to AppendEntries struct
 	// Entries      []LogEntry
-	LeaderCommit uint64
+	LeaderCommit LogIndex
 }
 
 type AppendEntriesResponse struct {
