@@ -47,6 +47,154 @@ flowchart LR
 
 ## 6. Raft Core
 
+The Raft core contains the protocol state and logic required to implement the
+Raft consensus algorithm.
+
+Its main responsibilities are:
+
+- leader election;
+- log replication;
+- tracking committed log entries;
+- processing Raft protocol messages;
+- maintaining the persistent and volatile state required by Raft.
+
+The core does not perform networking or manage timers. Those responsibilities
+belong to the Raft runtime.
+
+The core depends on the `StableStorage` interface so that safety-critical Raft
+state can be persisted before protocol actions that depend on it are completed.
+
+### `RaftCore`
+
+`RaftCore` represents the Raft state of a single cluster member.
+
+| Field | Type | Responsibility |
+|---|---|---|
+| `nodeID` | `NodeID` | Stable identifier of the current node. |
+| `role` | `RaftRole` | Current role: follower, candidate, or leader. |
+| `storage` | `StableStorage` | Durable storage used for persistent Raft state. |
+| `currentTerm` | `Term` | In-memory copy of the current Raft term. |
+| `votedFor` | `NodeID` | Node voted for in the current term, or empty if no vote has been cast. |
+| `commitIndex` | `LogIndex` | Highest log index known to be committed. |
+| `lastApplied` | `LogIndex` | Highest committed log index that has been applied to the state machine. |
+| `votesReceived` | `map[NodeID]struct{}` | Set of unique nodes that granted a vote during the current election. |
+| `members` | `[]NodeID` | IDs of all members of the Raft cluster, including the current node. |
+
+### Construction
+
+#### `NewRaftCore`
+
+```go
+func NewRaftCore(config Config, storage StableStorage) (*RaftCore, error)
+```
+
+Creates a new Raft core using the supplied cluster configuration and stable
+storage.
+
+The constructor validates the configuration, loads the persisted `HardState`,
+and initializes the node as a follower.
+
+Persistent state loaded during initialization:
+
+- `currentTerm`
+- `votedFor`
+
+Volatile state is initialized in memory.
+
+### Leader Election
+
+#### `StartElection`
+
+```go
+func (core *RaftCore) StartElection() (RequestVote, RoleTransition, error)
+```
+
+Starts a new election.
+
+The node:
+
+1. increments its current term;
+2. votes for itself;
+3. persists the new `HardState`;
+4. becomes a candidate;
+5. records its own vote;
+6. creates a `RequestVote` message for the current term.
+
+If the node already has a majority after voting for itself, such as in a
+single-node cluster, it immediately becomes leader.
+
+The runtime is responsible for delivering the returned `RequestVote` message
+to the other cluster members.
+
+#### `HandleVoteRequest`
+
+```go
+func (core *RaftCore) HandleVoteRequest(
+    req RequestVote,
+) (RequestVoteResponse, RoleTransition, error)
+```
+
+Processes a `RequestVote` received from another cluster member.
+
+The node first validates the sender and compares the request term with its
+current term.
+
+A vote may be granted only when:
+
+- the candidate belongs to the cluster;
+- the candidate is not the current node;
+- the request term is not stale;
+- the node has not voted for another candidate in the same term;
+- the candidate's log is at least as up-to-date as the local log.
+
+Log freshness is determined by comparing the term of the last log entry first.
+If the terms are equal, the log with the greater last index is considered more
+up-to-date.
+
+If a higher-term request is received, the node adopts the higher term and
+becomes a follower even if the candidate's log is too stale to receive the
+vote.
+
+Any change to `currentTerm` or `votedFor` is persisted before the corresponding
+Raft state transition is considered successful.
+
+#### `HandleRequestVoteResponse`
+
+```go
+func (core *RaftCore) HandleRequestVoteResponse(
+    resp RequestVoteResponse,
+) (RoleTransition, error)
+```
+
+Processes a response to a previously issued `RequestVote`.
+
+Lower-term or invalid responses are ignored.
+
+If the response contains a higher term, the node adopts that term and becomes
+a follower.
+
+If the node is still a candidate and the response grants a vote, the responder
+is added to `votesReceived`. Because votes are stored by `NodeID`, duplicate
+responses from the same node cannot be counted more than once.
+
+Once the number of received votes reaches a majority of cluster members, the
+candidate becomes leader.
+
+### Role Transition Helper
+
+#### `becomeFollower`
+
+```go
+func (core *RaftCore) becomeFollower(
+    term Term,
+    votedFor NodeID,
+) (bool, error)
+```
+
+Transitions the node into follower state and persists the supplied hard state.
+
+The function returns whether the node was already a follower, allowing callers
+to distinguish an actual role transition from a follower remaining a follower.
 ## 7. Raft Runtime
 
 ## 8. Persistence and Crash-Safety Rules
