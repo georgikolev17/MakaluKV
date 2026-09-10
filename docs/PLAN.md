@@ -114,22 +114,21 @@ The Raft core should not depend on:
 
 ### Work
 
-- [ ] Define the in-memory `Node` state.
-- [ ] Initialize a node from persisted `HardState`.
-- [ ] Define follower, candidate, and leader roles.
-- [ ] Handle election timeout.
-- [ ] Implement follower → candidate transition.
-- [ ] Increment the term when starting an election.
-- [ ] Vote for self.
-- [ ] Generate `RequestVote` messages.
-- [ ] Handle incoming `RequestVote`.
-- [ ] Handle `RequestVoteResponse`.
-- [ ] Count votes.
-- [ ] Detect majority.
-- [ ] Implement candidate → leader transition.
-- [ ] Handle higher terms received in Raft messages.
-- [ ] Step down to follower when required.
-- [ ] Handle empty `AppendEntries` heartbeats.
+- [x] Initialize a node from persisted `HardState`.
+- [x] Define follower, candidate, and leader roles.
+- [ ] TODO: After Stage 6 -> Handle election timeout.
+- [x] Implement follower → candidate transition.
+- [x] Increment the term when starting an election.
+- [x] Vote for self.
+- [x] Generate `RequestVote` messages.
+- [x] Handle incoming `RequestVote`.
+- [x] Handle `RequestVoteResponse`.
+- [x] Count votes.
+- [x] Detect majority.
+- [x] Implement candidate → leader transition.
+- [x] Handle higher terms received in Raft messages.
+- [x] Step down to follower when required.
+- [x] Handle empty `AppendEntries` heartbeats.
 - [ ] Add deterministic leader-election tests.
 
 ### Important scenarios to test
