@@ -14,8 +14,8 @@ type RequestVoteResponse struct {
 }
 
 type AppendEntries struct {
-	Term         uint64
-	LeaderID     string
+	Term         Term
+	LeaderID     NodeID
 	PrevLogIndex LogIndex
 	PrevLogTerm  LogIndex
 	// TODO: Add Entries field to AppendEntries struct
@@ -24,6 +24,6 @@ type AppendEntries struct {
 }
 
 type AppendEntriesResponse struct {
-	Term    uint64
+	Term    Term
 	Success bool
 }

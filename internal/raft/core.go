@@ -83,7 +83,6 @@ func (core *RaftCore) StartElection() (RequestVote, RoleTransition, error) {
 
 // HandleVoteRequest decides whether the current node will grant a vote to the requester
 func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, RoleTransition, error) {
-	// TODO: Temporary until logs are implemented
 	if !slices.Contains(core.members, req.CandidateID) {
 		return RequestVoteResponse{}, KeepCurrentRole, errors.New("the requester of the vote is not amongst the members of the cluster")
 	}
@@ -91,8 +90,9 @@ func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, R
 		return RequestVoteResponse{}, KeepCurrentRole, errors.New("node cannot request a vote from itself")
 	}
 
+	// TODO: Temporary until logs are implemented
 	lastLogIndex, lastLogTerm := core.getLastLogInfo()
-	// If the node requesting a vote is among the current node's peers (but is not the current node itself), and the current node hasn't voted for anyone in the requested term, the current node grants votes for the requester, we have 2 options:
+	// If the node requesting a vote is member of the cluster (but is not the current node itself), and the current node hasn't voted for anyone in the requested term, the current node grants votes for the requester, we have 2 options:
 	//1. The requester's log is at least as up to date as the current node's log -> become a follower and vote for it
 	//2. The requester's log is stale but the request is from higher term -> become a follower without voting
 	if req.Term > core.currentTerm || (req.Term == core.currentTerm && (core.votedFor == "" || core.votedFor == req.CandidateID)) {
@@ -152,6 +152,50 @@ func (core *RaftCore) HandleRequestVoteResponse(resp RequestVoteResponse) (RoleT
 	}
 
 	return KeepCurrentRole, nil
+}
+
+// HandleAppendEntries handles incoming AppendEntries messages.
+func (core *RaftCore) HandleAppendEntries(appendEntries AppendEntries) (AppendEntriesResponse, RoleTransition, error) {
+	// TODO: For now, this function handles only empty AppendEntries, just for the purpose of leader management. Implement log handling!!!
+
+	// Validate sender
+	if !slices.Contains(core.members, appendEntries.LeaderID) {
+		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, KeepCurrentRole, errors.New("AppendEntries sender is not a member of the cluster")
+	}
+	if appendEntries.LeaderID == core.nodeID {
+		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, KeepCurrentRole, errors.New("node cannot receive AppendEntries from itself")
+	}
+
+	transition := KeepCurrentRole
+
+	// Check if this is from old term
+	if appendEntries.Term < core.currentTerm {
+		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, transition, nil
+	}
+
+	if appendEntries.Term > core.currentTerm {
+		alreadyFollower, err := core.becomeFollower(appendEntries.Term, "")
+		if err != nil {
+			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, transition, err
+		}
+
+		if !alreadyFollower {
+			transition = BecomeFollower
+		}
+	} else if core.role != RaftFollower { // If the core is in the same turn as AppendEntries but is not a follower
+		_, err := core.becomeFollower(appendEntries.Term, core.votedFor)
+
+		if err != nil {
+			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, transition, err
+		}
+		transition = BecomeFollower
+	}
+
+	// At this point, the sender is valid, the request term is not stale,
+	// and the core is a follower. Process the log portion of AppendEntries.
+	// TODO: Add log handling here
+
+	return AppendEntriesResponse{Success: true, Term: core.currentTerm}, transition, nil
 }
 
 // TODO: Temporary helper until logs are implemented. Replace with real implementation!
