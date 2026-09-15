@@ -49,6 +49,11 @@ func NewRaftCore(config Config, storage StableStorage) (*RaftCore, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if hardState.VotedFor != "" && !slices.Contains(core.members, hardState.VotedFor) {
+		return nil, errors.New("persisted votedFor is not a cluster member")
+	}
+
 	core.currentTerm, core.votedFor = hardState.CurrentTerm, hardState.VotedFor
 	return &core, nil
 }
