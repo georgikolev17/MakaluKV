@@ -42,34 +42,66 @@ func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, R
 		return RequestVoteResponse{}, KeepCurrentRole, errors.New("node cannot request a vote from itself")
 	}
 
+	// If the request is from older term, reject it
+	if req.Term < core.currentTerm {
+		return RequestVoteResponse{
+			ResponderID: core.nodeID,
+			Term:        core.currentTerm,
+			VoteGranted: false,
+		}, KeepCurrentRole, nil
+	}
+
 	// TODO: Temporary until logs are implemented
 	lastLogIndex, lastLogTerm := core.getLastLogInfo()
-	// If the node requesting a vote is member of the cluster (but is not the current node itself), and the current node hasn't voted for anyone in the requested term, the current node grants votes for the requester, we have 2 options:
-	//1. The requester's log is at least as up to date as the current node's log -> become a follower and vote for it
-	//2. The requester's log is stale but the request is from higher term -> become a follower without voting
-	if req.Term > core.currentTerm || (req.Term == core.currentTerm && (core.votedFor == "" || core.votedFor == req.CandidateID)) {
-		if req.LastLogTerm > lastLogTerm || (req.LastLogTerm == lastLogTerm && req.LastLogIndex >= lastLogIndex) {
-			alreadyFollower, err := core.becomeFollower(req.Term, req.CandidateID)
-			if err != nil {
-				return RequestVoteResponse{}, KeepCurrentRole, err
-			}
-			if alreadyFollower {
-				return RequestVoteResponse{ResponderID: core.nodeID, Term: core.currentTerm, VoteGranted: true}, KeepCurrentRole, nil
-			}
-			return RequestVoteResponse{ResponderID: core.nodeID, Term: core.currentTerm, VoteGranted: true}, BecomeFollower, nil
-		} else if req.Term > core.currentTerm {
+
+	logUpToDate := req.LastLogTerm > lastLogTerm ||
+		(req.LastLogTerm == lastLogTerm && req.LastLogIndex >= lastLogIndex)
+
+	if !logUpToDate {
+		transition := KeepCurrentRole
+		if req.Term > core.currentTerm {
 			alreadyFollower, err := core.becomeFollower(req.Term, "")
 			if err != nil {
 				return RequestVoteResponse{}, KeepCurrentRole, err
 			}
-
-			if alreadyFollower {
-				return RequestVoteResponse{ResponderID: core.nodeID, Term: core.currentTerm, VoteGranted: false}, KeepCurrentRole, nil
+			if !alreadyFollower {
+				transition = BecomeFollower
 			}
-			return RequestVoteResponse{ResponderID: core.nodeID, Term: core.currentTerm, VoteGranted: false}, BecomeFollower, nil
 		}
+		return RequestVoteResponse{
+			ResponderID: core.nodeID,
+			Term:        core.currentTerm,
+			VoteGranted: false,
+		}, transition, nil
 	}
-	return RequestVoteResponse{ResponderID: core.nodeID, Term: core.currentTerm, VoteGranted: false}, KeepCurrentRole, nil
+
+	canVote := req.Term > core.currentTerm ||
+		(req.Term == core.currentTerm &&
+			(core.votedFor == "" || core.votedFor == req.CandidateID))
+
+	if !canVote {
+		return RequestVoteResponse{
+			ResponderID: core.nodeID,
+			Term:        core.currentTerm,
+			VoteGranted: false,
+		}, KeepCurrentRole, nil
+	}
+
+	// Everything is correct, and a vote can be granted
+	alreadyFollower, err := core.becomeFollower(req.Term, req.CandidateID)
+	if err != nil {
+		return RequestVoteResponse{}, KeepCurrentRole, err
+	}
+	transition := BecomeFollower
+	if alreadyFollower {
+		transition = KeepCurrentRole
+	}
+
+	return RequestVoteResponse{
+		ResponderID: core.nodeID,
+		Term:        core.currentTerm,
+		VoteGranted: true,
+	}, transition, nil
 }
 
 // HandleRequestVoteResponse handles the received vote-request response
