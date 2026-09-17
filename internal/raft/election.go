@@ -1,15 +1,14 @@
 package raft
 
 import (
-	"errors"
 	"slices"
 )
 
 // StartElection starts an election, makes the current node a candidate and returns a RequestVote object
-func (core *RaftCore) StartElection() (RequestVote, RoleTransition, error) {
+func (core *RaftCore) StartElection() (RequestVote, error) {
 	newState := HardState{CurrentTerm: core.currentTerm + 1, VotedFor: core.nodeID}
 	if err := core.storage.SaveHardState(newState); err != nil {
-		return RequestVote{}, KeepCurrentRole, err
+		return RequestVote{}, err
 	}
 
 	core.votesReceived = make(map[NodeID]struct{})
@@ -24,22 +23,24 @@ func (core *RaftCore) StartElection() (RequestVote, RoleTransition, error) {
 
 	if votes >= majority {
 		core.role = RaftLeader
-		return RequestVote{}, BecomeLeader, nil
+		return RequestVote{}, nil
 	}
 
 	// TODO: Temporary until logs are implemented
 	lastLogIndex, lastLogTerm := core.getLastLogInfo()
 
-	return RequestVote{Term: core.currentTerm, CandidateID: core.nodeID, LastLogIndex: lastLogIndex, LastLogTerm: lastLogTerm}, BecomeCandidate, nil
+	return RequestVote{
+		Term:         core.currentTerm,
+		CandidateID:  core.nodeID,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm,
+	}, nil
 }
 
 // HandleVoteRequest decides whether the current node will grant a vote to the requester
-func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, RoleTransition, error) {
-	if !slices.Contains(core.members, req.CandidateID) {
-		return RequestVoteResponse{}, KeepCurrentRole, errors.New("the requester of the vote is not amongst the members of the cluster")
-	}
-	if req.CandidateID == core.nodeID {
-		return RequestVoteResponse{}, KeepCurrentRole, errors.New("node cannot request a vote from itself")
+func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, error) {
+	if !slices.Contains(core.members, req.CandidateID) || req.CandidateID == core.nodeID {
+		return RequestVoteResponse{}, nil
 	}
 
 	// If the request is from older term, reject it
@@ -48,7 +49,7 @@ func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, R
 			ResponderID: core.nodeID,
 			Term:        core.currentTerm,
 			VoteGranted: false,
-		}, KeepCurrentRole, nil
+		}, nil
 	}
 
 	// TODO: Temporary until logs are implemented
@@ -58,21 +59,17 @@ func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, R
 		(req.LastLogTerm == lastLogTerm && req.LastLogIndex >= lastLogIndex)
 
 	if !logUpToDate {
-		transition := KeepCurrentRole
 		if req.Term > core.currentTerm {
-			alreadyFollower, err := core.becomeFollower(req.Term, "")
+			err := core.becomeFollower(req.Term, "")
 			if err != nil {
-				return RequestVoteResponse{}, KeepCurrentRole, err
-			}
-			if !alreadyFollower {
-				transition = BecomeFollower
+				return RequestVoteResponse{}, err
 			}
 		}
 		return RequestVoteResponse{
 			ResponderID: core.nodeID,
 			Term:        core.currentTerm,
 			VoteGranted: false,
-		}, transition, nil
+		}, nil
 	}
 
 	canVote := req.Term > core.currentTerm ||
@@ -84,44 +81,36 @@ func (core *RaftCore) HandleVoteRequest(req RequestVote) (RequestVoteResponse, R
 			ResponderID: core.nodeID,
 			Term:        core.currentTerm,
 			VoteGranted: false,
-		}, KeepCurrentRole, nil
+		}, nil
 	}
 
 	// Everything is correct, and a vote can be granted
-	alreadyFollower, err := core.becomeFollower(req.Term, req.CandidateID)
+	err := core.becomeFollower(req.Term, req.CandidateID)
 	if err != nil {
-		return RequestVoteResponse{}, KeepCurrentRole, err
-	}
-	transition := BecomeFollower
-	if alreadyFollower {
-		transition = KeepCurrentRole
+		return RequestVoteResponse{}, err
 	}
 
 	return RequestVoteResponse{
 		ResponderID: core.nodeID,
 		Term:        core.currentTerm,
 		VoteGranted: true,
-	}, transition, nil
+	}, nil
 }
 
 // HandleRequestVoteResponse handles the received vote-request response
-func (core *RaftCore) HandleRequestVoteResponse(resp RequestVoteResponse) (RoleTransition, error) {
+func (core *RaftCore) HandleRequestVoteResponse(resp RequestVoteResponse) error {
 	if !slices.Contains(core.members, resp.ResponderID) || resp.Term < core.currentTerm {
-		return KeepCurrentRole, nil
+		return nil
 	}
 	if resp.Term > core.currentTerm {
-		alreadyFollower, err := core.becomeFollower(resp.Term, "")
+		err := core.becomeFollower(resp.Term, "")
 		if err != nil {
-			return KeepCurrentRole, err
+			return err
 		}
-
-		if alreadyFollower {
-			return KeepCurrentRole, nil
-		}
-		return BecomeFollower, nil
+		return nil
 	}
 	if core.role != RaftCandidate {
-		return KeepCurrentRole, nil
+		return nil
 	}
 
 	if resp.VoteGranted {
@@ -131,53 +120,43 @@ func (core *RaftCore) HandleRequestVoteResponse(resp RequestVoteResponse) (RoleT
 
 		if votes >= majority {
 			core.role = RaftLeader
-			return BecomeLeader, nil
+			return nil
 		}
 	}
 
-	return KeepCurrentRole, nil
+	return nil
 }
 
 // HandleAppendEntries handles incoming AppendEntries messages.
-func (core *RaftCore) HandleAppendEntries(appendEntries AppendEntries) (AppendEntriesResponse, RoleTransition, error) {
+func (core *RaftCore) HandleAppendEntries(appendEntries AppendEntries) (AppendEntriesResponse, error) {
 	// TODO: For now, this function handles only empty AppendEntries, just for the purpose of leader management. Implement log handling!!!
 
 	// Validate sender
-	if !slices.Contains(core.members, appendEntries.LeaderID) {
-		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, KeepCurrentRole, errors.New("AppendEntries sender is not a member of the cluster")
+	if !slices.Contains(core.members, appendEntries.LeaderID) || appendEntries.LeaderID == core.nodeID {
+		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, nil
 	}
-	if appendEntries.LeaderID == core.nodeID {
-		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, KeepCurrentRole, errors.New("node cannot receive AppendEntries from itself")
-	}
-
-	transition := KeepCurrentRole
 
 	// Check if this is from old term
 	if appendEntries.Term < core.currentTerm {
-		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, transition, nil
+		return AppendEntriesResponse{Success: false, Term: core.currentTerm}, nil
 	}
 
 	if appendEntries.Term > core.currentTerm {
-		alreadyFollower, err := core.becomeFollower(appendEntries.Term, "")
+		err := core.becomeFollower(appendEntries.Term, "")
 		if err != nil {
-			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, transition, err
-		}
-
-		if !alreadyFollower {
-			transition = BecomeFollower
+			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, err
 		}
 	} else if core.role != RaftFollower { // If the core is in the same turn as AppendEntries but is not a follower
-		_, err := core.becomeFollower(appendEntries.Term, core.votedFor)
+		err := core.becomeFollower(appendEntries.Term, core.votedFor)
 
 		if err != nil {
-			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, transition, err
+			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, err
 		}
-		transition = BecomeFollower
 	}
 
 	// At this point, the sender is valid, the request term is not stale,
 	// and the core is a follower. Process the log portion of AppendEntries.
 	// TODO: Add log handling here
 
-	return AppendEntriesResponse{Success: true, Term: core.currentTerm}, transition, nil
+	return AppendEntriesResponse{Success: true, Term: core.currentTerm}, nil
 }

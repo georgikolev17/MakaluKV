@@ -64,15 +64,14 @@ func (core *RaftCore) getLastLogInfo() (LogIndex, Term) {
 }
 
 // becomeFollower transitions the current node into a follower for a given term and votedFor. It returns a boolean telling whether or not the role changed or it was already a follower
-func (core *RaftCore) becomeFollower(term Term, votedFor NodeID) (bool, error) {
+func (core *RaftCore) becomeFollower(term Term, votedFor NodeID) error {
 	if err := core.storage.SaveHardState(HardState{CurrentTerm: term, VotedFor: votedFor}); err != nil {
-		return false, err
+		return err
 	}
-	alreadyFollower := core.role == RaftFollower
 	core.role = RaftFollower
 	core.currentTerm = term
 	core.votedFor = votedFor
 	core.votesReceived = make(map[NodeID]struct{})
 
-	return alreadyFollower, nil
+	return nil
 }
