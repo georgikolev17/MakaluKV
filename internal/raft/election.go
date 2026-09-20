@@ -146,7 +146,7 @@ func (core *RaftCore) HandleAppendEntries(appendEntries AppendEntries) (AppendEn
 		if err != nil {
 			return AppendEntriesResponse{Success: false, Term: core.currentTerm}, err
 		}
-	} else if core.role != RaftFollower { // If the core is in the same turn as AppendEntries but is not a follower
+	} else if core.role != RaftFollower { // If the core is in the same term as AppendEntries but is not a follower
 		err := core.becomeFollower(appendEntries.Term, core.votedFor)
 
 		if err != nil {
