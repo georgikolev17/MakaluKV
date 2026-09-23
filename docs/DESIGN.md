@@ -8,9 +8,9 @@
 
 Internally, the system is divided into four main components:
 
-- **Raft core** - contains the protocol logic of the Raft consensus algorithm.
+- **Raft core** - contains the protocol logic of the Raft consensus algorithm and coordinates persietence of the Raft state through an instance of `StableStorage`.
 
-- **Raft runtime** - owns the Raft core and handles concurrency, timers, networking, persistence coordination, and communication with the rest of the system.
+- **Raft runtime** - owns the Raft core and handles concurrency, timers, networking, and communication with the rest of the system.
 
 - **Raft stable storage** - stores the persistent Raft state of a node, including `CurrentTerm`, `VotedFor`, and eventually the Raft log.
 
@@ -80,7 +80,7 @@ state can be persisted before protocol actions that depend on it are completed.
 | `votesReceived` | `map[NodeID]struct{}` | Set of unique nodes that granted a vote during the current election. |
 | `members` | `[]NodeID` | IDs of all members of the Raft cluster, including the current node. |
 
-### Construction
+### 6.1 Construction
 
 #### `NewRaftCore`
 
@@ -101,7 +101,7 @@ Persistent state loaded during initialization:
 
 Volatile state is initialized in memory.
 
-### Leader Election
+### 6.2 Leader Election
 
 #### `StartElection`
 
@@ -131,7 +131,7 @@ to the other cluster members.
 ```go
 func (core *RaftCore) HandleVoteRequest(
     req RequestVote,
-) (RequestVoteResponse, RoleTransition, error)
+) (RequestVoteResponse, error)
 ```
 
 Processes a `RequestVote` received from another cluster member.
@@ -163,7 +163,7 @@ Raft state transition is considered successful.
 ```go
 func (core *RaftCore) HandleRequestVoteResponse(
     resp RequestVoteResponse,
-) (RoleTransition, error)
+) error
 ```
 
 Processes a response to a previously issued `RequestVote`.
@@ -188,13 +188,31 @@ candidate becomes leader.
 func (core *RaftCore) becomeFollower(
     term Term,
     votedFor NodeID,
-) (bool, error)
+) error
 ```
 
 Transitions the node into follower state and persists the supplied hard state.
 
-The function returns whether the node was already a follower, allowing callers
-to distinguish an actual role transition from a follower remaining a follower.
+### 6.3 Log Replication
+
+#### `HandleAppendEntries`
+
+```go
+func (core *RaftCore) HandleAppendEntries(
+    appendEntries AppendEntries,
+) (AppendEntriesResponse, error)
+```
+
+Processes an incoming `AppendEntries` request.
+
+The function first validates the sender and rejects requests from stale terms with `Success = false`.
+
+If the request is from a higher term, the node adopts the new term, clears its previous vote, and becomes a follower. If the request is from the current term and the node is a candidate or leader, it becomes a follower while preserving its vote for the current term.
+
+If the node is already a follower in the same term, no role or persistent state change is required.
+
+Log consistency checks, conflict resolution, entry replication, and commit-index updates are not yet implemented. These will be added during the log-replication phase.
+
 ## 7. Raft Runtime
 
 ## 8. Persistence and Crash-Safety Rules

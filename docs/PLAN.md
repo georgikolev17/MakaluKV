@@ -99,7 +99,7 @@ A restarted Raft node can recover the persistent state required to safely partic
 # Stage 3 — Leader Election
 
 **Status:** In progress  
-**Target:** 6 September 2026
+**Target:** 21 September 2026
 
 Implement leader election as part of the deterministic Raft core.
 
@@ -129,17 +129,18 @@ The Raft core should not depend on:
 - [x] Handle higher terms received in Raft messages.
 - [x] Step down to follower when required.
 - [x] Handle empty `AppendEntries` heartbeats.
-- [ ] Add deterministic leader-election tests.
+- [x] Add deterministic leader-election tests.
+- [ ] Document the implemented changes
 
 ### Important scenarios to test
 
-- [ ] One node times out and wins an election.
-- [ ] Candidate receives enough votes to become leader.
+- [ ] TODO for later: One node times out and wins an election.
+- [x] Candidate receives enough votes to become leader.
 - [ ] Candidate fails to receive a majority.
 - [ ] Two candidates compete in the same term.
 - [ ] Node refuses to vote twice in the same term.
-- [ ] Candidate receives a higher-term message and becomes follower.
-- [ ] Leader receives a higher-term message and becomes follower.
+- [x] Candidate receives a higher-term message and becomes follower.
+- [x] Leader receives a higher-term message and becomes follower.
 - [ ] Valid heartbeat prevents unnecessary election.
 
 ### Result
@@ -151,7 +152,7 @@ Multiple deterministic Raft cores can elect a leader correctly without using rea
 # Stage 4 — Log Replication
 
 **Status:** Not started  
-**Target:** 20 September 2026
+**Target:** 4 October 2026
 
 Extend the Raft core with replicated logs.
 

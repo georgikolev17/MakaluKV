@@ -20,7 +20,7 @@ type AppendEntries struct {
 	PrevLogTerm  LogIndex
 	// TODO: Add Entries field to AppendEntries struct
 	// Entries      []LogEntry
-	LeaderCommit LogIndex
+	LeaderCommit LogIndex // leader's commit index
 }
 
 type AppendEntriesResponse struct {
