@@ -1,36 +1,82 @@
 # MakaluKV
 
-**MakaluKV** is a distributed key-value store written in Go, using a custom implementation of the [Raft consensus algorithm](https://raft.github.io/raft.pdf) to provide replication and fault tolerance across nodes.
+**MakaluKV** is a distributed key-value store written in Go, built around a custom implementation of the [Raft consensus algorithm](https://raft.github.io/raft.pdf).
+
+The project focuses on replication, fault tolerance, durable state, and the internal mechanics of building a distributed system from the ground up.
 
 ## Why MakaluKV?
 
-The goal of this project is to get familiar with the Go language and gain experience in Distributed Systems development.
+MakaluKV is a learning-focused systems project created to gain hands-on experience with:
+
+- distributed consensus
+- replication and fault tolerance
+- durable storage
+- RPC-based communication
+- Go systems programming
+- designing clear boundaries between consensus, storage, and application logic
+
+Rather than using an existing Raft library, the consensus layer is being implemented from scratch.
 
 ## Features
 
-Currently, the project has a 1-node key-value storage. The final goal is to have multi-node key-value storage that is able to survive failures of some of the nodes.
+### Implemented
+
+- Persistent key-value storage
+- gRPC API
+- `Get`, `Put`, `Delete`, and Compare-and-Swap operations
+- Pebble-backed persistence
+- Persistent Raft hard state
+  - current term
+  - voted-for node
+- Raft leader election
+- Durable Raft log storage primitives
+
+### In Progress
+
+- Raft log replication
+- `AppendEntries` consistency and conflict handling
+- Leader replication state
+- Commit index advancement
+
+### Planned
+
+- Applying committed log entries to the state machine
+- Raft runtime with timers and RPC delivery
+- Real 3-node clusters
+- Failure recovery
+- Linearizable reads
+- Snapshots and log compaction
+- Deterministic fault testing
 
 ## Architecture
 
-Small architecture diagram + link to docs/DESIGN.md
+MakaluKV separates the consensus layer from the replicated application state.
 
-## Current Status
+```text
+                Client
+                  |
+                  v
+               gRPC API
+                  |
+                  v
+             Raft Runtime
+                  |
+                  v
+              Raft Core
+             /         \
+            v           v
+     Stable Storage   State Machine
+       (Pebble)         (Pebble)
+```
 
-What stage the project is currently at.
+The two persistent stores serve different purposes:
 
-## Getting Started
+```text
+data/node-1/
+├── raft/            # Raft term, vote, and replicated log
+└── state-machine/   # Replicated key-value state
+```
 
-Requirements, build, run.
+The Raft core contains protocol logic and coordinates persistence of Raft safety-critical state through a storage abstraction.
 
-## Running a Cluster
-
-Add this once Stage 7 exists.
-
-## Testing
-
-How to run tests.
-
-## Documentation
-
-- [Design](docs/DESIGN.md)
-- [Development Plan](docs/PLAN.md)
+For more detail, see [DESIGN.md](docs/DESIGN.md).
