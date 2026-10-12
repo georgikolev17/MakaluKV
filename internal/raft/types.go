@@ -18,3 +18,9 @@ type HardState struct {
 	// empty string represents no vote
 	VotedFor NodeID
 }
+
+type LogEntry struct {
+	Term  Term
+	Index LogIndex
+	Data  []byte
+}

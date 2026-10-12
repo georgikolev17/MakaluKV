@@ -16,4 +16,9 @@ type StableStorage interface {
 	// AddLog() error
 	// GetAllLogs() []LogEntry, error
 	// GetLog(id uint64) LogEntry
+
+	LastLogInfo() (LogIndex, Term, error)
+	LogEntry(index LogIndex) (LogEntry, bool, error)
+	LogEntries(from LogIndex, to LogIndex) ([]LogEntry, error)
+	ReplaceLogSuffix(from LogIndex, logs []LogEntry) error
 }

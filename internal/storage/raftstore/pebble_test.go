@@ -1,6 +1,7 @@
 package raftstore
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/cockroachdb/pebble/v2"
@@ -144,6 +145,223 @@ func TestLoadHardStateRejectsInvalidCurrentTermEncoding(t *testing.T) {
 	}
 }
 
+// --- Log Tests ---
+func TestLastLogInfoReturnsZeroTermAndIndexWhenLogEmpty(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	index, term, err := store.LastLogInfo()
+
+	if err != nil {
+		t.Fatalf("failed to get last log info: %v", err.Error())
+	}
+
+	if index != 0 {
+		t.Errorf("expected index: 0, got %d", index)
+	}
+
+	if term != 0 {
+		t.Errorf("expected term: 0, got %d", term)
+	}
+}
+
+func TestLastLogInfoReturnsLastEntryInfo(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	logs := []raft.LogEntry{
+		{Index: 1, Term: 1},
+		{Index: 2, Term: 1},
+		{Index: 3, Term: 2},
+		{Index: 4, Term: 3},
+	}
+
+	if err := store.ReplaceLogSuffix(1, logs); err != nil {
+		t.Fatalf("failed to write log entries: %v", err)
+	}
+
+	index, term, err := store.LastLogInfo()
+	if err != nil {
+		t.Fatalf("failed to get last log info: %v", err)
+	}
+
+	if index != 4 {
+		t.Errorf("expected index: 4, got %d", index)
+	}
+
+	if term != 3 {
+		t.Errorf("expected term: 3, got %d", term)
+	}
+}
+
+func TestLogEntriesReturnsExpectedRange(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	logs := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 1, Data: []byte("two")},
+		{Index: 3, Term: 2, Data: []byte("three")},
+		{Index: 4, Term: 2, Data: []byte("four")},
+		{Index: 5, Term: 3, Data: []byte("five")},
+	}
+
+	if err := store.ReplaceLogSuffix(1, logs); err != nil {
+		t.Fatalf("failed to write log entries: %v", err)
+	}
+
+	t.Run("to zero returns entries until end", func(t *testing.T) {
+		entries, err := store.LogEntries(3, 0)
+		if err != nil {
+			t.Fatalf("failed to get log entries: %v", err)
+		}
+
+		expected := []raft.LogEntry{
+			{Index: 3, Term: 2, Data: []byte("three")},
+			{Index: 4, Term: 2, Data: []byte("four")},
+			{Index: 5, Term: 3, Data: []byte("five")},
+		}
+
+		checkEntries(t, entries, expected)
+	})
+
+	t.Run("to greater than zero returns half-open range", func(t *testing.T) {
+		entries, err := store.LogEntries(2, 5)
+		if err != nil {
+			t.Fatalf("failed to get log entries: %v", err)
+		}
+
+		expected := []raft.LogEntry{
+			{Index: 2, Term: 1, Data: []byte("two")},
+			{Index: 3, Term: 2, Data: []byte("three")},
+			{Index: 4, Term: 2, Data: []byte("four")},
+		}
+
+		checkEntries(t, entries, expected)
+	})
+}
+
+func TestReplaceLogSuffixReplacesExistingSuffix(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	logs := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 1, Data: []byte("two")},
+		{Index: 3, Term: 2, Data: []byte("three")},
+		{Index: 4, Term: 2, Data: []byte("four")},
+		{Index: 5, Term: 3, Data: []byte("five")},
+	}
+
+	if err := store.ReplaceLogSuffix(1, logs); err != nil {
+		t.Fatalf("failed to write initial log entries: %v", err)
+	}
+
+	replacement := []raft.LogEntry{
+		{Index: 3, Term: 4, Data: []byte("new-three")},
+		{Index: 4, Term: 4, Data: []byte("new-four")},
+	}
+
+	if err := store.ReplaceLogSuffix(3, replacement); err != nil {
+		t.Fatalf("failed to replace log suffix: %v", err)
+	}
+
+	entries, err := store.LogEntries(1, 0)
+	if err != nil {
+		t.Fatalf("failed to get log entries: %v", err)
+	}
+
+	expected := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 1, Data: []byte("two")},
+		{Index: 3, Term: 4, Data: []byte("new-three")},
+		{Index: 4, Term: 4, Data: []byte("new-four")},
+	}
+
+	checkEntries(t, entries, expected)
+}
+
+func TestReplaceLogSuffixWithEmptyLogsTruncatesSuffix(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	logs := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 1, Data: []byte("two")},
+		{Index: 3, Term: 2, Data: []byte("three")},
+		{Index: 4, Term: 2, Data: []byte("four")},
+		{Index: 5, Term: 3, Data: []byte("five")},
+	}
+
+	if err := store.ReplaceLogSuffix(1, logs); err != nil {
+		t.Fatalf("failed to write initial log entries: %v", err)
+	}
+
+	if err := store.ReplaceLogSuffix(3, nil); err != nil {
+		t.Fatalf("failed to truncate log suffix: %v", err)
+	}
+
+	entries, err := store.LogEntries(1, 0)
+	if err != nil {
+		t.Fatalf("failed to get log entries: %v", err)
+	}
+
+	expected := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 1, Data: []byte("two")},
+	}
+
+	checkEntries(t, entries, expected)
+}
+
+func TestLogEntryReturnsExistingEntry(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	logs := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 2, Data: []byte("two")},
+		{Index: 3, Term: 3, Data: []byte("three")},
+	}
+
+	if err := store.ReplaceLogSuffix(1, logs); err != nil {
+		t.Fatalf("failed to write log entries: %v", err)
+	}
+
+	entry, exists, err := store.LogEntry(2)
+	if err != nil {
+		t.Fatalf("failed to get log entry: %v", err)
+	}
+
+	if !exists {
+		t.Fatal("expected log entry to exist")
+	}
+
+	expected := []raft.LogEntry{
+		{Index: 2, Term: 2, Data: []byte("two")},
+	}
+
+	checkEntries(t, []raft.LogEntry{entry}, expected)
+}
+
+func TestLogEntryReturnsFalseWhenEntryDoesNotExist(t *testing.T) {
+	store := openTestStore(t, t.TempDir())
+
+	logs := []raft.LogEntry{
+		{Index: 1, Term: 1, Data: []byte("one")},
+		{Index: 2, Term: 2, Data: []byte("two")},
+	}
+
+	if err := store.ReplaceLogSuffix(1, logs); err != nil {
+		t.Fatalf("failed to write log entries: %v", err)
+	}
+
+	_, exists, err := store.LogEntry(3)
+	if err != nil {
+		t.Fatalf("failed to get log entry: %v", err)
+	}
+
+	if exists {
+		t.Error("expected log entry not to exist")
+	}
+}
+
+// --- Helper functions ---
+
 func openTestStore(t *testing.T, directory string) *PebbleStore {
 	t.Helper()
 
@@ -159,4 +377,41 @@ func openTestStore(t *testing.T, directory string) *PebbleStore {
 	})
 
 	return store
+}
+
+func checkEntries(t *testing.T, entries, expected []raft.LogEntry) {
+	t.Helper()
+
+	if len(entries) != len(expected) {
+		t.Fatalf("expected %d entries, got %d", len(expected), len(entries))
+	}
+
+	for i := range expected {
+		if entries[i].Index != expected[i].Index {
+			t.Errorf(
+				"entry %d: expected index %d, got %d",
+				i,
+				expected[i].Index,
+				entries[i].Index,
+			)
+		}
+
+		if entries[i].Term != expected[i].Term {
+			t.Errorf(
+				"entry %d: expected term %d, got %d",
+				i,
+				expected[i].Term,
+				entries[i].Term,
+			)
+		}
+
+		if !bytes.Equal(entries[i].Data, expected[i].Data) {
+			t.Errorf(
+				"entry %d: expected data %q, got %q",
+				i,
+				expected[i].Data,
+				entries[i].Data,
+			)
+		}
+	}
 }

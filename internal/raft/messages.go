@@ -17,9 +17,9 @@ type AppendEntries struct {
 	Term         Term
 	LeaderID     NodeID
 	PrevLogIndex LogIndex
-	PrevLogTerm  LogIndex
+	PrevLogTerm  Term
 	// TODO: Add Entries field to AppendEntries struct
-	// Entries      []LogEntry
+	Entries      []LogEntry
 	LeaderCommit LogIndex // leader's commit index
 }
 

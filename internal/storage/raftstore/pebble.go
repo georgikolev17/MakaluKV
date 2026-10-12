@@ -1,8 +1,10 @@
 package raftstore
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/cockroachdb/pebble/v2"
 	raft "github.com/georgikolev17/MakaluKV/internal/raft"
@@ -97,6 +99,8 @@ func (s *PebbleStore) Close() error {
 	return s.db.Close()
 }
 
+// --- HardState functionality ---
+
 // LoadHardState loads votedFor and currentTerm from the db into a HardState object.
 func (s *PebbleStore) LoadHardState() (raft.HardState, error) {
 	value, closer, err := s.db.Get([]byte(keyCurrentTerm))
@@ -151,4 +155,214 @@ func (s *PebbleStore) SaveHardState(hardState raft.HardState) error {
 	}
 
 	return nil
+}
+
+// --- Log functionality ---
+
+// LastLogInfo returns the index and term of the last entry of the log.
+func (s *PebbleStore) LastLogInfo() (raft.LogIndex, raft.Term, error) {
+	iter, err := s.db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte(keyLogPrefix),
+		UpperBound: []byte(keyLogUpperBound),
+	})
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	defer iter.Close()
+
+	if !iter.Last() {
+		if err := iter.Error(); err != nil {
+			return 0, 0, err
+		}
+		return 0, 0, nil
+	}
+
+	index, err := decodeLogKey(iter.Key())
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	entry, err := decodeLogValue(index, iter.Value())
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return index, entry.Term, nil
+}
+
+// LogEntry returns the log entry with the provided index.
+func (s *PebbleStore) LogEntry(index raft.LogIndex) (raft.LogEntry, bool, error) {
+	key := encodeLogKey(index)
+
+	value, closer, err := s.db.Get(key)
+	if err != nil {
+		if errors.Is(err, pebble.ErrNotFound) {
+			return raft.LogEntry{}, false, nil
+		}
+		return raft.LogEntry{}, false, err
+	}
+	defer closer.Close()
+
+	entry, err := decodeLogValue(index, value)
+	if err != nil {
+		return raft.LogEntry{}, false, err
+	}
+
+	return entry, true, nil
+}
+
+// LogEntries returns log entries in the range [from, to).
+// If to == 0, it returns all entries from from through the end of the log.
+func (s *PebbleStore) LogEntries(from raft.LogIndex, to raft.LogIndex) ([]raft.LogEntry, error) {
+	if to != 0 && from > to {
+		return nil, errors.New("from index cannot be greater than to index")
+	}
+
+	startIndex := encodeLogKey(from)
+
+	var endIndex []byte
+	if to == 0 {
+		endIndex = []byte(keyLogUpperBound)
+	} else {
+		endIndex = encodeLogKey(to)
+	}
+
+	iter, err := s.db.NewIter(&pebble.IterOptions{
+		LowerBound: startIndex,
+		UpperBound: endIndex,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	if !iter.First() {
+		if err := iter.Error(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	var entries []raft.LogEntry
+
+	for {
+		index, err := decodeLogKey(iter.Key())
+		if err != nil {
+			return nil, err
+		}
+
+		entry, err := decodeLogValue(index, iter.Value())
+		if err != nil {
+			return nil, err
+		}
+
+		entries = append(entries, entry)
+
+		if !iter.Next() {
+			if err := iter.Error(); err != nil {
+				return nil, err
+			}
+			break
+		}
+	}
+
+	return entries, nil
+}
+
+// ReplaceLogSuffix deletes all log entries starting at from and replaces
+// them with logs.
+func (s *PebbleStore) ReplaceLogSuffix(from raft.LogIndex, logs []raft.LogEntry) error {
+	if from == 0 {
+		return errors.New("from index must be greater than zero")
+	}
+
+	// The replacement must form a contiguous suffix starting at from.
+	for i, entry := range logs {
+		expectedIndex := from + raft.LogIndex(i)
+
+		if entry.Index != expectedIndex {
+			return fmt.Errorf(
+				"log entry index %d does not match expected index %d",
+				entry.Index,
+				expectedIndex,
+			)
+		}
+	}
+
+	batch := s.db.NewBatch()
+	defer batch.Close()
+
+	if err := batch.DeleteRange(
+		encodeLogKey(from),
+		[]byte(keyLogUpperBound),
+		nil,
+	); err != nil {
+		return err
+	}
+
+	for _, entry := range logs {
+		if err := batch.Set(
+			encodeLogKey(entry.Index),
+			encodeLogValue(entry),
+			nil,
+		); err != nil {
+			return err
+		}
+	}
+
+	return batch.Commit(pebble.Sync)
+}
+
+// --- Helper functions ---
+func encodeLogKey(index raft.LogIndex) []byte {
+	key := make([]byte, len(keyLogPrefix)+8)
+
+	copy(key, keyLogPrefix)
+	binary.BigEndian.PutUint64(key[len(keyLogPrefix):], uint64(index))
+
+	return key
+}
+
+func decodeLogKey(key []byte) (raft.LogIndex, error) {
+	if len(key) != len(keyLogPrefix)+8 {
+		return 0, errors.New("invalid log key length")
+	}
+
+	if !bytes.HasPrefix(key, []byte(keyLogPrefix)) {
+		return 0, errors.New("invalid log key prefix")
+	}
+
+	index := binary.BigEndian.Uint64(key[len(keyLogPrefix):])
+
+	return raft.LogIndex(index), nil
+}
+
+func encodeLogValue(entry raft.LogEntry) []byte {
+	value := make([]byte, 8+len(entry.Data))
+
+	binary.BigEndian.PutUint64(value[:8], uint64(entry.Term))
+	copy(value[8:], entry.Data)
+
+	return value
+}
+
+func decodeLogValue(index raft.LogIndex, value []byte) (raft.LogEntry, error) {
+	if len(value) < 8 {
+		return raft.LogEntry{}, errors.New("invalid log value")
+	}
+
+	term := raft.Term(binary.BigEndian.Uint64(value[:8]))
+
+	data := make([]byte, len(value)-8)
+	copy(data, value[8:])
+
+	return raft.LogEntry{
+		Index: index,
+		Term:  term,
+		Data:  data,
+	}, nil
 }

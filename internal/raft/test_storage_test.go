@@ -28,3 +28,19 @@ func (s *testStorage) SaveHardState(state HardState) error {
 	s.hardState = state
 	return nil
 }
+
+func (s *testStorage) LastLogInfo() (LogIndex, Term, error) {
+	return 0, 0, nil
+}
+
+func (s *testStorage) LogEntry(index LogIndex) (LogEntry, bool, error) {
+	return LogEntry{}, false, nil
+}
+
+func (s *testStorage) LogEntries(from LogIndex, to LogIndex) ([]LogEntry, error) {
+	return nil, nil
+}
+
+func (s *testStorage) ReplaceLogSuffix(from LogIndex, logs []LogEntry) error {
+	return nil
+}
