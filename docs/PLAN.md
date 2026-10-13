@@ -136,12 +136,12 @@ The Raft core should not depend on:
 
 - [ ] TODO for later: One node times out and wins an election.
 - [x] Candidate receives enough votes to become leader.
-- [ ] Candidate fails to receive a majority.
-- [ ] Two candidates compete in the same term.
-- [ ] Node refuses to vote twice in the same term.
+- [x] Candidate fails to receive a majority.
+- [x] Two candidates compete in the same term.
+- [x] Node refuses to vote twice in the same term (including duplicate `RequestVote`).
 - [x] Candidate receives a higher-term message and becomes follower.
 - [x] Leader receives a higher-term message and becomes follower.
-- [ ] Valid heartbeat prevents unnecessary election.
+- [x] Valid heartbeat keeps the deterministic core a follower without advancing its term (timer reset is Stage 6).
 
 ### Result
 
